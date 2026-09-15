@@ -1,0 +1,30 @@
+{
+  "name": "marketing-os",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI Marketing Operating System — MVP monorepo",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/* build && pnpm -r --filter=./apps/* build",
+    "dev:api": "pnpm --filter @marketing-os/api dev",
+    "dev:worker": "pnpm --filter @marketing-os/worker dev",
+    "dev:web": "pnpm --filter @marketing-os/web dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @marketing-os/database generate",
+    "db:migrate": "pnpm --filter @marketing-os/database migrate",
+    "db:seed": "pnpm --filter @marketing-os/database seed"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vitest": "2.1.4",
+    "@types/node": "20.16.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

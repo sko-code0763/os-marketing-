@@ -1,0 +1,98 @@
+# Local/self-hosted stack for the Marketing OS MVP.
+# `docker compose up --build` brings up Postgres, Redis, the API, the agent
+# worker, and the Next.js web app. Run `docker compose exec api pnpm --filter
+# @marketing-os/database migrate` once on first boot (see README).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: marketing_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/marketing_os
+      REDIS_URL: redis://redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-to-a-long-random-string}
+      COOKIE_NAME: mos_session
+      API_PORT: 4000
+      # Was hardcoded to http://localhost:3000, which silently ignored
+      # CORS_ORIGIN in .env — meaning a tunneled/deployed web app's requests
+      # were never actually allowed through CORS no matter what .env said.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # See apps/api/src/routes/auth.ts — required (along with a matching
+      # CORS_ORIGIN above) for login to work when the web app and API are on
+      # two different origins that share no registrable domain, e.g. two
+      # separate *.trycloudflare.com tunnel subdomains.
+      COOKIE_CROSS_SITE: ${COOKIE_CROSS_SITE:-false}
+    ports:
+      - "4000:4000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/marketing_os
+      REDIS_URL: redis://redis:6379
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      # NEXT_PUBLIC_API_URL is inlined into the client bundle at build time
+      # (Next.js), not read at container start — it MUST be a build arg, not
+      # a runtime `environment:` entry (a runtime-only value here would be
+      # silently ignored by the already-built frontend). This is the browser's
+      # own address for the API (published port on the host), not an
+      # in-network container hostname, since fetch() runs in the user's
+      # browser, not inside the `web` container.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
